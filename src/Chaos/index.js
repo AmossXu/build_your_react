@@ -115,7 +115,12 @@ function commitWork(fiber) {
     if (!fiber) {
         return
     }
-    const domParent = fiber.parent.dom
+
+    const domParentFiber = fiber.parent
+    while (!domParentFiber.dom) {
+        domParentFiber = domParentFiber.parent
+    }
+    const domParent = domParentFiber.dom
 
     if (
         fiber.effectTag === 'PLACEMENT' &&
@@ -132,11 +137,20 @@ function commitWork(fiber) {
             fiber.props
         )
     } else if (fiber.effectTag === 'DELETION') {
-        domParent.removeChild(fiber.dom)
+        commitDeletion(fiber, domParent)
     }
 
     commitWork(domParent.child)
     commitWork(domParent.sibling)
+}
+
+function commitDeletion(fiber, domParent) {
+    if (fiber.dom) {
+        domParent.removeChild(fiber.dom)
+    } else {
+        // keep going util we find a child with dom node
+        commitDeletion(fiber.child, domParent)
+    }
 }
 
 function workLoop(deadline) {
@@ -160,19 +174,14 @@ requestIdleCallback(workLoop)
 
 function performUnitOfWork(fiber) {
     console.log('fiber', fiber);
-    if (!fiber.dom) {
-        fiber.dom = createDom(fiber)
+    const isFunctionComponent =
+        fiber.type instanceof Function
+
+    if (isFunctionComponent) {
+        updateFunctionComponent(fiber)
+    } else {
+        updateHostComponent(fiber)
     }
-
-    if (fiber.parent) {
-        fiber.parent.dom.appendChild(fiber.dom)
-    }
-
-    // create new fiber
-    const elements = fiber.props.children
-
-    reconcileChildren(fiber, elements)
-
 
 
     // return next unit of work
@@ -186,6 +195,19 @@ function performUnitOfWork(fiber) {
         }
         nextFiber = nextFiber.parent
     }
+}
+
+function updateFunctionComponent(fiber) {
+    const children = [fiber.type(fiber.props)]
+    console.log('children in updateFunctionComponent', children)
+    reconcileChildren(fiber, children)
+}
+
+function updateHostComponent(fiber) {
+    if (!fiber.dom) {
+        fiber.dom = createDom(fiber)
+    }
+    reconcileChildren(fiber, fiber.props.children)
 }
 
 /**
