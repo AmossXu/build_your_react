@@ -197,10 +197,63 @@ function performUnitOfWork(fiber) {
     }
 }
 
+// global variable
+let wipFiber = null
+let hookIndex = null
+
 function updateFunctionComponent(fiber) {
+    wipFiber = fiber
+    hookIndex = 0
+    wipFiber.hooks = []
+
     const children = [fiber.type(fiber.props)]
     console.log('children in updateFunctionComponent', children)
     reconcileChildren(fiber, children)
+}
+
+/**
+ * When the function component calls useState, we check if we have an old hook. We check in the alternate of the fiber using the hook index.
+ * If we have an old hook, we copy the state from the old hook to the new hook, if we don’t we initialize the state.
+ * Then we add the new hook to the fiber, increment the hook index by one, and return the state.
+ * @param {number} initial 
+ * @returns 
+ */
+// useState
+function useState(initial) {
+    const oldHook =
+        wipFiber.alternate &&
+        wipFiber.alternate.hooks &&
+        wipFiber.alternate.hooks[hookIndex]
+
+    const hook = {
+        state: oldHook ? oldHook.state : initial,
+        queue: []
+    }
+
+    const actions = oldHook ? oldHook.queue : []
+    actions.forEach(action => {
+        hook.state = action(hook.state)
+    })
+
+    const setState = action => {
+        hook.queue.push(action)
+
+        /**
+         * And then we do something similar to what we did in the render function,
+         * set a new work in progress root as the next unit of work so the work loop can start a new render phase.
+         */
+        wipRoot = {
+            dom: currentRoot.dom,
+            props: currentRoot.props,
+            alternate: currentRoot,
+        }
+        nextUnitOfWork = wipRoot
+        deletions = []
+    }
+
+    wipFiber.hooks.push(hook)
+    hookIndex++
+    return [hook.state, setState]
 }
 
 function updateHostComponent(fiber) {
@@ -280,6 +333,7 @@ function reconcileChildren(wipFiber, elements) {
 const Chaos = {
     createElement,
     render,
+    useState
 }
 
 export default Chaos
